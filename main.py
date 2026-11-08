@@ -1,4 +1,5 @@
 import os
+import asyncio
 import threading
 from flask import Flask
 import yt_dlp
@@ -7,7 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-# ===== Keep Alive Web Server - Port 10000 =====
+# ===== Flask - Free Web Service එක Live තියාගන්න =====
 app_web = Flask(__name__)
 
 @app_web.route('/')
@@ -19,11 +20,10 @@ def health():
     return "OK", 200
 
 def run_web():
-    # New Port - 10000
+    # Port 10000 - New One
     port = int(os.environ.get("PORT", 10000))
     app_web.run(host="0.0.0.0", port=port)
 
-# Block YouTube only
 BLOCKED = ["youtube.com", "youtu.be", "music.youtube"]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -32,23 +32,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ TikTok / Instagram / Facebook / Twitter\n"
         "✅ Terabox / Reddit / Vimeo / Dailymotion\n"
         "✅ Any Website Video\n\n"
-        "❌ YouTube / Netflix not supported\n\n"
-        "Just send the link and I will give you a Download Link."
+        "❌ YouTube / Netflix not supported"
     )
 
 async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
-
     if any(x in url.lower() for x in BLOCKED):
         await update.message.reply_text("❌ YouTube is not supported.")
         return
-
     if "http" not in url:
         await update.message.reply_text("⚠️ Please send a Video Link.")
         return
 
     msg = await update.message.reply_text("⏳ Finding your video...")
-
     try:
         ydl_opts = {
             'format': 'best[ext=mp4]/best/bestvideo+bestaudio/best',
@@ -69,24 +65,28 @@ async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         await msg.edit_text(
-            f"✅ **{title}**\n\n"
-            f"👇 Download here:\n{direct_link}\n\n"
-            f"⚠️ This link will expire soon, download it quickly.",
+            f"✅ **{title}**\n\n👇 Download here:\n{direct_link}\n\n⚠️ This link will expire soon, download it quickly.",
             parse_mode="Markdown",
             disable_web_page_preview=True
         )
-
     except Exception as e:
         await msg.edit_text(f"❌ Error: {str(e)[:200]}\n\nTry another link.")
 
-def main():
+# ===== FIX - Event Loop Error එකට =====
+async def main():
+    # Flask වෙනම Thread එකක
     threading.Thread(target=run_web, daemon=True).start()
 
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link))
+
     print("Bot Started...")
-    app.run_polling()
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    # Bot එක නවත්තන්නේ නැතුව තියාගන්නවා
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
